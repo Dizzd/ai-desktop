@@ -7,8 +7,13 @@ use tokio::process::Child;
 /// Type of process being tracked
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ProcessType {
-    AgentRun { agent_id: i64, agent_name: String },
-    ClaudeSession { session_id: String },
+    AgentRun {
+        agent_id: i64,
+        agent_name: String,
+    },
+    ClaudeSession {
+        session_id: String,
+    },
 }
 
 /// Information about a running agent process
@@ -67,10 +72,7 @@ impl ProcessRegistry {
     ) -> Result<(), String> {
         let process_info = ProcessInfo {
             run_id,
-            process_type: ProcessType::AgentRun {
-                agent_id,
-                agent_name,
-            },
+            process_type: ProcessType::AgentRun { agent_id, agent_name },
             pid,
             started_at: Utc::now(),
             project_path,
@@ -94,10 +96,7 @@ impl ProcessRegistry {
     ) -> Result<(), String> {
         let process_info = ProcessInfo {
             run_id,
-            process_type: ProcessType::AgentRun {
-                agent_id,
-                agent_name,
-            },
+            process_type: ProcessType::AgentRun { agent_id, agent_name },
             pid,
             started_at: Utc::now(),
             project_path,
@@ -107,7 +106,7 @@ impl ProcessRegistry {
 
         // For sidecar processes, we register without the child handle since it's managed differently
         let mut processes = self.processes.lock().map_err(|e| e.to_string())?;
-
+        
         let process_handle = ProcessHandle {
             info: process_info,
             child: Arc::new(Mutex::new(None)), // No tokio::process::Child handle for sidecar
@@ -128,7 +127,7 @@ impl ProcessRegistry {
         model: String,
     ) -> Result<i64, String> {
         let run_id = self.generate_id()?;
-
+        
         let process_info = ProcessInfo {
             run_id,
             process_type: ProcessType::ClaudeSession { session_id },
@@ -141,7 +140,7 @@ impl ProcessRegistry {
 
         // Register without child - Claude sessions use ClaudeProcessState for process management
         let mut processes = self.processes.lock().map_err(|e| e.to_string())?;
-
+        
         let process_handle = ProcessHandle {
             info: process_info,
             child: Arc::new(Mutex::new(None)), // No child handle for Claude sessions
@@ -176,24 +175,25 @@ impl ProcessRegistry {
         let processes = self.processes.lock().map_err(|e| e.to_string())?;
         Ok(processes
             .values()
-            .filter_map(|handle| match &handle.info.process_type {
-                ProcessType::ClaudeSession { .. } => Some(handle.info.clone()),
-                _ => None,
+            .filter_map(|handle| {
+                match &handle.info.process_type {
+                    ProcessType::ClaudeSession { .. } => Some(handle.info.clone()),
+                    _ => None,
+                }
             })
             .collect())
     }
 
     /// Get a specific Claude session by session ID
-    pub fn get_claude_session_by_id(
-        &self,
-        session_id: &str,
-    ) -> Result<Option<ProcessInfo>, String> {
+    pub fn get_claude_session_by_id(&self, session_id: &str) -> Result<Option<ProcessInfo>, String> {
         let processes = self.processes.lock().map_err(|e| e.to_string())?;
         Ok(processes
             .values()
-            .find(|handle| match &handle.info.process_type {
-                ProcessType::ClaudeSession { session_id: sid } => sid == session_id,
-                _ => false,
+            .find(|handle| {
+                match &handle.info.process_type {
+                    ProcessType::ClaudeSession { session_id: sid } => sid == session_id,
+                    _ => false,
+                }
             })
             .map(|handle| handle.info.clone()))
     }
@@ -221,9 +221,11 @@ impl ProcessRegistry {
         let processes = self.processes.lock().map_err(|e| e.to_string())?;
         Ok(processes
             .values()
-            .filter_map(|handle| match &handle.info.process_type {
-                ProcessType::AgentRun { .. } => Some(handle.info.clone()),
-                _ => None,
+            .filter_map(|handle| {
+                match &handle.info.process_type {
+                    ProcessType::AgentRun { .. } => Some(handle.info.clone()),
+                    _ => None,
+                }
             })
             .collect())
     }
@@ -271,26 +273,17 @@ impl ProcessRegistry {
                     }
                 }
             } else {
-                warn!(
-                    "No child handle available for process {} (PID: {}), attempting system kill",
-                    run_id, pid
-                );
+                warn!("No child handle available for process {} (PID: {}), attempting system kill", run_id, pid);
                 false // Process handle not available, try fallback
             }
         };
 
         // If direct kill didn't work, try system command as fallback
         if !kill_sent {
-            info!(
-                "Attempting fallback kill for process {} (PID: {})",
-                run_id, pid
-            );
+            info!("Attempting fallback kill for process {} (PID: {})", run_id, pid);
             match self.kill_process_by_pid(run_id, pid) {
                 Ok(true) => return Ok(true),
-                Ok(false) => warn!(
-                    "Fallback kill also failed for process {} (PID: {})",
-                    run_id, pid
-                ),
+                Ok(false) => warn!("Fallback kill also failed for process {} (PID: {})", run_id, pid),
                 Err(e) => error!("Error during fallback kill: {}", e),
             }
             // Continue with the rest of the cleanup even if fallback failed

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bot, Loader2, Play, Clock, CheckCircle, XCircle, Trash2, Import, ChevronDown, ChevronRight, FileJson, Globe, Download, Plus, History, Edit } from 'lucide-react';
+import { Bot, Loader2, Play, Clock, CheckCircle, XCircle, Trash2, Import, ChevronDown, ChevronRight, FileJson, Globe, Download, Plus, History } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,7 +22,6 @@ import { useTabState } from '@/hooks/useTabState';
 export const Agents: React.FC = () => {
   const [activeTab, setActiveTab] = useState('agents');
   const [showCreateAgent, setShowCreateAgent] = useState(false);
-  const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [runningAgents, setRunningAgents] = useState<AgentRunWithMetrics[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,14 +122,17 @@ export const Agents: React.FC = () => {
     try {
       const selected = await openDialog({
         filters: [
-          { name: 'opcode Agent', extensions: ['opcode.json', 'json'] },
+          { name: 'JSON Files', extensions: ['json'] },
           { name: 'All Files', extensions: ['*'] }
         ],
         multiple: false,
       });
 
       if (selected) {
-        const importedAgent = await api.importAgentFromFile(selected as string);
+        const fileContent = await invoke<string>('read_text_file', { path: selected });
+        const agentData = JSON.parse(fileContent);
+        
+        const importedAgent = await api.importAgent(JSON.stringify(agentData));
         setToast({ message: `Imported agent: ${importedAgent.name}`, type: 'success' });
         loadAgents();
       }
@@ -143,14 +145,18 @@ export const Agents: React.FC = () => {
   const handleExportAgent = async (agent: Agent) => {
     try {
       const path = await save({
-        defaultPath: `${agent.name.toLowerCase().replace(/\s+/g, '-')}.opcode.json`,
+        defaultPath: `${agent.name}.json`,
         filters: [
-          { name: 'opcode Agent', extensions: ['opcode.json'] }
+          { name: 'JSON Files', extensions: ['json'] }
         ]
       });
 
       if (path && agent.id) {
-        await invoke('export_agent_to_file', { id: agent.id, filePath: path });
+        const agentData = await api.exportAgent(agent.id);
+        await invoke('write_text_file', {
+          path,
+          contents: agentData
+        });
         setToast({ message: `Exported agent: ${agent.name}`, type: 'success' });
       }
     } catch (error) {
@@ -180,20 +186,6 @@ export const Agents: React.FC = () => {
         onAgentCreated={() => {
           setShowCreateAgent(false);
           loadAgents(); // Reload agents after creation
-        }}
-      />
-    );
-  }
-
-  // Show CreateAgent component in edit mode
-  if (editingAgent) {
-    return (
-      <CreateAgent
-        agent={editingAgent}
-        onBack={() => setEditingAgent(null)}
-        onAgentCreated={() => {
-          setEditingAgent(null);
-          loadAgents(); // Reload agents after update
         }}
       />
     );
@@ -359,10 +351,6 @@ export const Agents: React.FC = () => {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => setEditingAgent(agent)}>
-                              <Edit className="w-4 h-4 mr-2" />
-                              Edit
-                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => handleRunAgent(agent)}>
                               <Play className="w-4 h-4 mr-2" />
                               Run

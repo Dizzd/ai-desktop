@@ -69,14 +69,13 @@ const WebviewPreviewComponent: React.FC<WebviewPreviewProps> = ({
   // TODO: These will be implemented with actual webview navigation
   // const [canGoBack, setCanGoBack] = useState(false);
   // const [canGoForward, setCanGoForward] = useState(false);
-
+  
   // TODO: These will be used for actual Tauri webview implementation
   // const webviewRef = useRef<WebviewWindow | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   // const previewId = useRef(`preview-${Date.now()}`);
-  const isIMEComposingRef = useRef(false);
 
   // Handle ESC key to exit full screen
   useEffect(() => {
@@ -143,21 +142,8 @@ const WebviewPreviewComponent: React.FC<WebviewPreviewProps> = ({
     }
   };
 
-  const handleCompositionStart = () => {
-    isIMEComposingRef.current = true;
-  };
-
-  const handleCompositionEnd = () => {
-    setTimeout(() => {
-      isIMEComposingRef.current = false;
-    }, 0);
-  };
-
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
-      if (e.nativeEvent.isComposing || isIMEComposingRef.current) {
-        return;
-      }
       handleNavigate();
     }
   };
@@ -284,8 +270,6 @@ const WebviewPreviewComponent: React.FC<WebviewPreviewProps> = ({
               value={inputUrl}
               onChange={(e) => setInputUrl(e.target.value)}
               onKeyDown={handleKeyDown}
-              onCompositionStart={handleCompositionStart}
-              onCompositionEnd={handleCompositionEnd}
               placeholder="Enter URL..."
               className="pr-10 h-8 text-sm font-mono"
             />
