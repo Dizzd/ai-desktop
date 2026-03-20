@@ -96,13 +96,13 @@ pub struct ImportServerResult {
 }
 
 /// Executes a claude mcp command
-fn execute_claude_mcp_command(app_handle: &AppHandle, args: Vec<&str>) -> Result<String> {
+fn execute_claude_mcp_command(app_handle: &AppHandle, args: Vec<String>) -> Result<String> {
     info!("Executing claude mcp command with args: {:?}", args);
 
     let claude_path = find_claude_binary(app_handle)?;
     let mut cmd = create_command_with_env(&claude_path);
     cmd.arg("mcp");
-    for arg in args {
+    for arg in &args {
         cmd.arg(arg);
     }
 
@@ -136,38 +136,41 @@ pub async fn mcp_add(
         .map(|(key, value)| format!("{}={}", key, value))
         .collect();
 
-    let mut cmd_args = vec!["add"];
+    let mut cmd_args: Vec<String> = vec!["add".to_string()];
 
     // Add scope flag
-    cmd_args.push("-s");
-    cmd_args.push(&scope);
+    cmd_args.push("-s".to_string());
+    cmd_args.push(scope.clone());
 
     // Add transport flag for SSE
     if transport == "sse" {
-        cmd_args.push("--transport");
-        cmd_args.push("sse");
+        cmd_args.push("--transport".to_string());
+        cmd_args.push("sse".to_string());
     }
 
     // Add environment variables
+    // Use --env KEY=value format (single argument) for Windows compatibility;
+    // Windows shell re-parses argv entries and splits on spaces, which would
+    // corrupt KEY=value into just the value. The =-joined form keeps it intact.
     for (i, _) in env.iter().enumerate() {
-        cmd_args.push("-e");
-        cmd_args.push(&env_args[i]);
+        let arg = format!("--env={}", &env_args[i]);
+        cmd_args.push(arg);
     }
 
     // Add name
-    cmd_args.push(&name);
+    cmd_args.push(name.clone());
 
     // Add command/URL based on transport
     if transport == "stdio" {
         if let Some(cmd) = &command {
             // Add "--" separator before command to prevent argument parsing issues
             if !args.is_empty() || cmd.contains('-') {
-                cmd_args.push("--");
+                cmd_args.push("--".to_string());
             }
-            cmd_args.push(cmd);
+            cmd_args.push(cmd.clone());
             // Add arguments
             for arg in &args {
-                cmd_args.push(arg);
+                cmd_args.push(arg.clone());
             }
         } else {
             return Ok(AddServerResult {
@@ -178,7 +181,7 @@ pub async fn mcp_add(
         }
     } else if transport == "sse" {
         if let Some(url_str) = &url {
-            cmd_args.push(url_str);
+            cmd_args.push(url_str.clone());
         } else {
             return Ok(AddServerResult {
                 success: false,
@@ -213,7 +216,7 @@ pub async fn mcp_add(
 pub async fn mcp_list(app: AppHandle) -> Result<Vec<MCPServer>, String> {
     info!("Listing MCP servers");
 
-    match execute_claude_mcp_command(&app, vec!["list"]) {
+    match execute_claude_mcp_command(&app, vec!["list".to_string()]) {
         Ok(output) => {
             info!("Raw output from 'claude mcp list': {:?}", output);
             let trimmed = output.trim();
@@ -335,7 +338,7 @@ pub async fn mcp_list(app: AppHandle) -> Result<Vec<MCPServer>, String> {
 pub async fn mcp_get(app: AppHandle, name: String) -> Result<MCPServer, String> {
     info!("Getting MCP server details for: {}", name);
 
-    match execute_claude_mcp_command(&app, vec!["get", &name]) {
+    match execute_claude_mcp_command(&app, vec!["get".to_string(), name.clone()]) {
         Ok(output) => {
             // Parse the structured text output
             let mut scope = "local".to_string();
@@ -404,7 +407,7 @@ pub async fn mcp_get(app: AppHandle, name: String) -> Result<MCPServer, String> 
 pub async fn mcp_remove(app: AppHandle, name: String) -> Result<String, String> {
     info!("Removing MCP server: {}", name);
 
-    match execute_claude_mcp_command(&app, vec!["remove", &name]) {
+    match execute_claude_mcp_command(&app, vec!["remove".to_string(), name.clone()]) {
         Ok(output) => {
             info!("Successfully removed MCP server: {}", name);
             Ok(output.trim().to_string())
@@ -430,12 +433,15 @@ pub async fn mcp_add_json(
     );
 
     // Build command args
-    let mut cmd_args = vec!["add-json", &name, &json_config];
+    let mut cmd_args: Vec<String> = vec![
+        "add-json".to_string(),
+        name.clone(),
+        json_config.clone(),
+    ];
 
     // Add scope flag
-    let scope_flag = "-s";
-    cmd_args.push(scope_flag);
-    cmd_args.push(&scope);
+    cmd_args.push("-s".to_string());
+    cmd_args.push(scope.clone());
 
     match execute_claude_mcp_command(&app, cmd_args) {
         Ok(output) => {
@@ -645,7 +651,7 @@ pub async fn mcp_test_connection(app: AppHandle, name: String) -> Result<String,
     info!("Testing connection to MCP server: {}", name);
 
     // For now, we'll use the get command to test if the server exists
-    match execute_claude_mcp_command(&app, vec!["get", &name]) {
+    match execute_claude_mcp_command(&app, vec!["get".to_string(), name.clone()]) {
         Ok(_) => Ok(format!("Connection to {} successful", name)),
         Err(e) => Err(e.to_string()),
     }
@@ -656,7 +662,7 @@ pub async fn mcp_test_connection(app: AppHandle, name: String) -> Result<String,
 pub async fn mcp_reset_project_choices(app: AppHandle) -> Result<String, String> {
     info!("Resetting MCP project choices");
 
-    match execute_claude_mcp_command(&app, vec!["reset-project-choices"]) {
+    match execute_claude_mcp_command(&app, vec!["reset-project-choices".to_string()]) {
         Ok(output) => {
             info!("Successfully reset MCP project choices");
             Ok(output.trim().to_string())

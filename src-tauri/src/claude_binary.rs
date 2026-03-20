@@ -74,7 +74,7 @@ pub fn find_claude_binary(app_handle: &tauri::AppHandle) -> Result<String, Strin
 
     if installations.is_empty() {
         error!("Could not find claude binary in any location");
-        return Err("Claude Code not found. Please ensure it's installed in one of these locations: PATH, /usr/local/bin, /opt/homebrew/bin, ~/.nvm/versions/node/*/bin, ~/.claude/local, ~/.local/bin".to_string());
+        return Err("Claude Code not found. Please ensure it's installed (see https://docs.anthropic.com/en/docs/claude-code/setup for installation options).".to_string());
     }
 
     // Log all found installations
@@ -165,6 +165,7 @@ fn discover_system_installations() -> Vec<ClaudeInstallation> {
 }
 
 /// Try using the 'which' command to find Claude
+#[cfg(not(target_os = "windows"))]
 fn try_which_command() -> Option<ClaudeInstallation> {
     debug!("Trying 'which claude' to find binary...");
 
@@ -201,6 +202,33 @@ fn try_which_command() -> Option<ClaudeInstallation> {
                 path,
                 version,
                 source: "which".to_string(),
+                installation_type: InstallationType::System,
+            })
+        }
+        _ => None,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn try_which_command() -> Option<ClaudeInstallation> {
+    debug!("Trying 'where claude' on Windows...");
+
+    match Command::new("cmd").args(["/C", "where claude"]).output() {
+        Ok(output) if output.status.success() => {
+            let output_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if output_str.is_empty() {
+                return None;
+            }
+            // Take first line (which can return multiple matches)
+            let path = output_str.lines().next()?.trim().to_string();
+            if !PathBuf::from(&path).exists() {
+                return None;
+            }
+            let version = get_claude_version(&path).ok().flatten();
+            Some(ClaudeInstallation {
+                path,
+                version,
+                source: "where".to_string(),
                 installation_type: InstallationType::System,
             })
         }
@@ -290,6 +318,44 @@ fn find_standard_installations() -> Vec<ClaudeInstallation> {
             (
                 format!("{}/.config/yarn/global/node_modules/.bin/claude", home),
                 "yarn-global".to_string(),
+            ),
+        ]);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // Get USERPROFILE at runtime (env!("USERPROFILE") only works at compile time)
+        if let Ok(userprofile) = std::env::var("USERPROFILE") {
+            paths_to_check.extend(vec![
+                (
+                    format!(
+                        "{}/AppData/Local/Programs/Claude/claude.exe",
+                        userprofile
+                    ),
+                    "windows-installer".to_string(),
+                ),
+                (
+                    format!("{}/AppData/Roaming/npm/claude.cmd", userprofile),
+                    "npm-global".to_string(),
+                ),
+                (
+                    format!("{}/AppData/Roaming/npm/claude", userprofile),
+                    "npm-global".to_string(),
+                ),
+                (
+                    format!("{}/.claude/local/claude.exe", userprofile),
+                    "claude-local".to_string(),
+                ),
+            ]);
+        }
+        paths_to_check.extend(vec![
+            (
+                "C:/Program Files/Claude/claude.exe".to_string(),
+                "program-files".to_string(),
+            ),
+            (
+                "C:/Program Files (x86)/Claude/claude.exe".to_string(),
+                "program-files-x86".to_string(),
             ),
         ]);
     }
@@ -474,6 +540,12 @@ pub fn create_command_with_env(program: &str) -> Command {
             || key == "HTTPS_PROXY"
             || key == "NO_PROXY"
             || key == "ALL_PROXY"
+            // Windows-specific env vars
+            || key == "USERPROFILE"
+            || key == "APPDATA"
+            || key == "LOCALAPPDATA"
+            || key == "PATHEXT"
+            || key == "SYSTEMROOT"
         {
             debug!("Inheriting env var: {}={}", key, value);
             cmd.env(&key, &value);
@@ -496,7 +568,8 @@ pub fn create_command_with_env(program: &str) -> Command {
             let current_path = std::env::var("PATH").unwrap_or_default();
             let node_bin_str = node_bin_dir.to_string_lossy();
             if !current_path.contains(&node_bin_str.as_ref()) {
-                let new_path = format!("{}:{}", node_bin_str, current_path);
+                let path_sep = if cfg!(target_os = "windows") { ";" } else { ":" };
+                let new_path = format!("{}{}{}", node_bin_str, path_sep, current_path);
                 debug!("Adding NVM bin directory to PATH: {}", node_bin_str);
                 cmd.env("PATH", new_path);
             }
@@ -510,7 +583,8 @@ pub fn create_command_with_env(program: &str) -> Command {
             let current_path = std::env::var("PATH").unwrap_or_default();
             let homebrew_bin_str = program_dir.to_string_lossy();
             if !current_path.contains(&homebrew_bin_str.as_ref()) {
-                let new_path = format!("{}:{}", homebrew_bin_str, current_path);
+                let path_sep = if cfg!(target_os = "windows") { ";" } else { ":" };
+                let new_path = format!("{}{}{}", homebrew_bin_str, path_sep, current_path);
                 debug!("Adding Homebrew bin directory to PATH: {}", homebrew_bin_str);
                 cmd.env("PATH", new_path);
             }
